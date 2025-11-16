@@ -33,7 +33,7 @@ class HarvesterActivityParser:
         self._regex = re.compile(
     r"([0-9:.]*) harvester (?:src|chia).harvester.harvester(?:\s?): INFO\s*"
     r"([0-9]+) plots were eligible for farming challenge_hash: ([0-9a-f]+).*?"
-    r"Found ([0-9]+) V1 proofs and ([0-9]+) V2 qualities\. Time: ([0-9.]+) s\. "
+    r"challengeFound ([0-9]+) V1 proofs and ([0-9]+) V2 qualities\. Time: ([0-9.]+) s\. "
     r"Total ([0-9]+) plots"
         )
 
