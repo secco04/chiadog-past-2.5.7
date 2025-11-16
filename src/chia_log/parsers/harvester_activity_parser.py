@@ -30,15 +30,17 @@ class HarvesterActivityParser:
 
     def __init__(self):
         logging.debug("Enabled parser for harvester activity - eligible plot events.")
-
-        self._regex = re.compile(
-            r"([0-9\-T:\.]+)\s+"                                # timestamp
-            r"harvester (?:src|chia)\.harvester\.harvester(?:\s*)?: INFO\s*"  # harvester Header
-            r"([0-9]+)\s*plots\s*were\s*eligible\s*for\s*farming\s*"          # eligible plots
-            r"([0-9a-fA-F\.]+).*?"                           # challenge hash (inklusive ggf. Punkte ...)
-            r"Found\s*([0-9]+)\s*proofs\."                   # found proofs
-            r"\s*Time:\s*([0-9\.]+)\s*s\.\s*Total\s*([0-9]+)\s*plots", # time + total
-            re.IGNORECASE | re.DOTALL
+    
+    # Pattern for old format: "Found 0 proofs. Time: 0.01783 s. Total 54 plots"
+    # Pattern for new format: "Found 0 V1 proofs and 0 V2 qualities. Time: 0.01284 s. Total 36 plots"
+        self._pattern = re.compile(
+            r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}).*?'
+            r'challenge_hash:\s*(\w+).*?'
+            r'(\d+)\s+plots?\s+were\s+eligible.*?'
+            r'Found\s+(?:(\d+)\s+(?:V1\s+)?proofs?(?:\s+and\s+\d+\s+V2\s+qualities)?|(\d+)\s+V1\s+proofs\s+and\s+(\d+)\s+V2\s+qualities).*?'
+            r'Time:\s+([\d.]+)\s+s.*?'
+            r'Total\s+(\d+)\s+plots',
+            re.DOTALL
         )
 
 
