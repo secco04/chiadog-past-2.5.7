@@ -120,5 +120,5 @@ class HarvesterActivityParser:
                     total_plots_count=total,
                 )
             )
-
+        print(parsed_messages)
         return parsed_messages
