@@ -64,5 +64,6 @@ class HarvesterActivityParser:
                     total_plots_count=int(match[5]),
                 )
             )
-        logging.debug(parsed_messages) 
+        
+            logging.debug(parsed_messages) 
         return parsed_messages
