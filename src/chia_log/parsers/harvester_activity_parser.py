@@ -54,51 +54,52 @@ class HarvesterActivityParser:
 
         parsed_messages = []
         
+        # Debug: Zeige die rohen Logs
+        logging.debug(f"Parsing logs, length: {len(logs)} characters")
+        logging.debug(f"First 500 chars of logs: {logs[:500]}")
+        
         # Versuche zuerst das neue 2.5.7 Format zu parsen
         matches_new = self._regex_new.findall(logs)
         
-        if logging.getLogger().isEnabledFor(logging.DEBUG):
-            logging.debug(f"Regex new format matches: {len(matches_new)}")
-            if matches_new:
-                for i, match in enumerate(matches_new):
-                    logging.debug(f"Match {i+1}: {match}")
+        logging.debug(f"Regex new format found {len(matches_new)} matches")
+        if matches_new:
+            for i, match in enumerate(matches_new):
+                logging.debug(f"New format match {i+1}: {match}")
         
         for match in matches_new:
-            parsed_messages.append(
-                HarvesterActivityMessage(
-                    timestamp=dateutil_parser.parse(match[0]),
-                    challenge_hash=match[1],
-                    eligible_plots_count=int(match[2]),
-                    found_proofs_count=int(match[3]),
-                    search_time_seconds=float(match[4]),
-                    total_plots_count=int(match[5]),
-                )
+            msg = HarvesterActivityMessage(
+                timestamp=dateutil_parser.parse(match[0]),
+                challenge_hash=match[1],
+                eligible_plots_count=int(match[2]),
+                found_proofs_count=int(match[3]),
+                search_time_seconds=float(match[4]),
+                total_plots_count=int(match[5]),
             )
+            logging.debug(f"Parsed message: {msg}")
+            parsed_messages.append(msg)
         
         # Fallback auf altes Format falls keine neuen Matches gefunden wurden
         if not matches_new:
             matches_old = self._regex_old.findall(logs)
             
-            if logging.getLogger().isEnabledFor(logging.DEBUG):
-                logging.debug(f"Regex old format matches: {len(matches_old)}")
-                if matches_old:
-                    for i, match in enumerate(matches_old):
-                        logging.debug(f"Match {i+1}: {match}")
-                else:
-                    # Zeige einen Teil der Logs zur Fehlersuche
-                    log_sample = logs[:500] if len(logs) > 500 else logs
-                    logging.debug(f"No matches found. Log sample: {log_sample}")
+            logging.debug(f"Regex old format found {len(matches_old)} matches")
+            if matches_old:
+                for i, match in enumerate(matches_old):
+                    logging.debug(f"Old format match {i+1}: {match}")
+            else:
+                logging.debug("No matches in either format!")
             
             for match in matches_old:
-                parsed_messages.append(
-                    HarvesterActivityMessage(
-                        timestamp=dateutil_parser.parse(match[0]),
-                        eligible_plots_count=int(match[1]),
-                        challenge_hash=match[2],
-                        found_proofs_count=int(match[3]),
-                        search_time_seconds=float(match[4]),
-                        total_plots_count=int(match[5]),
-                    )
+                msg = HarvesterActivityMessage(
+                    timestamp=dateutil_parser.parse(match[0]),
+                    eligible_plots_count=int(match[1]),
+                    challenge_hash=match[2],
+                    found_proofs_count=int(match[3]),
+                    search_time_seconds=float(match[4]),
+                    total_plots_count=int(match[5]),
                 )
-
+                logging.debug(f"Parsed message: {msg}")
+                parsed_messages.append(msg)
+        
+        logging.debug(f"Total parsed messages: {len(parsed_messages)}")
         return parsed_messages
