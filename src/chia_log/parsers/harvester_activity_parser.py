@@ -37,7 +37,7 @@ class HarvesterActivityParser:
     r"Total ([0-9]+) plots"
         )
 
-        )
+        
 
     def parse(self, logs: str) -> List[HarvesterActivityMessage]:
         """Parses all harvester activity messages from a bunch of logs
