@@ -57,6 +57,13 @@ class HarvesterActivityParser:
         
         # Versuche zuerst das neue 2.5.7 Format zu parsen
         matches_new = self._regex_new.findall(logs)
+        
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            logging.debug(f"Regex new format matches: {len(matches_new)}")
+            if matches_new:
+                for i, match in enumerate(matches_new):
+                    logging.debug(f"Match {i+1}: {match}")
+        
         for match in matches_new:
             parsed_messages.append(
                 HarvesterActivityMessage(
@@ -72,6 +79,17 @@ class HarvesterActivityParser:
         # Fallback auf altes Format falls keine neuen Matches gefunden wurden
         if not matches_new:
             matches_old = self._regex_old.findall(logs)
+            
+            if logging.getLogger().isEnabledFor(logging.DEBUG):
+                logging.debug(f"Regex old format matches: {len(matches_old)}")
+                if matches_old:
+                    for i, match in enumerate(matches_old):
+                        logging.debug(f"Match {i+1}: {match}")
+                else:
+                    # Zeige einen Teil der Logs zur Fehlersuche
+                    log_sample = logs[:500] if len(logs) > 500 else logs
+                    logging.debug(f"No matches found. Log sample: {log_sample}")
+            
             for match in matches_old:
                 parsed_messages.append(
                     HarvesterActivityMessage(
