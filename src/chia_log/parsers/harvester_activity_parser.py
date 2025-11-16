@@ -1,98 +1,85 @@
 # std
 import re
-from typing import List, Optional
+import logging
 from dataclasses import dataclass
+from datetime import datetime
+from typing import List
+
+# lib
+from dateutil import parser as dateutil_parser
 
 
 @dataclass
 class HarvesterActivityMessage:
-    """Data class for parsed harvester activity messages"""
-    timestamp: str
+    """Parsed information from harvester logs"""
+
+    timestamp: datetime
+    eligible_plots_count: int
     challenge_hash: str
-    eligible_plots: int
-    proofs_found: int
-    search_time: float
-    total_plots: int
+    found_proofs_count: int
+    search_time_seconds: float
+    total_plots_count: int
 
 
 class HarvesterActivityParser:
-    """Parser for Chia harvester activity log messages.
-    Compatible with both old and new log formats.
+    """This class can parse info log messages from the chia harvester
+
+    You need to have enabled "log_level: INFO" in your chia config.yaml
+    The chia config.yaml is usually under ~/.chia/mainnet/config/config.yaml
     """
 
     def __init__(self):
-        # Pattern for old format (2.5.6): "Found 0 proofs. Time: 0.19463 s. Total 982 plots"
-        # Pattern for new format (2.5.7): "Found 0 V1 proofs and 0 V2 qualities. Time: 0.01284 s. Total 36 plots"
-        self._pattern = re.compile(
-            r"([0-9:.]*) harvester (?:src|chia).harvester.harvester(?:\s?): INFO\s*([0-9]+) plots were "
-            r"eligible for farming ([0-9a-z.]*)\.\.\. Found (?:([0-9]+) proofs|([0-9]+) V1 proofs and ([0-9]+) V2 qualities)\. Time: ([0-9.]*) s\. "
-            r"Total ([0-9]*) plots"
+        logging.debug("Enabled parser for harvester activity - eligible plot events.")
+        # Regex für neues 2.5.7 Format
+        self._regex_new = re.compile(
+            r"([0-9:.T-]*)\s+[\d.]+\s+harvester\s+chia\.harvester\.harvester:\s+INFO\s+"
+            r"challenge_hash:\s+([0-9a-f]+)\s+\.{3}([0-9]+)\s+plots\s+were\s+eligible\s+for\s+farming\s+"
+            r"challengeFound\s+([0-9]+)\s+V1\s+proofs\s+and\s+[0-9]+\s+V2\s+qualities\.\s+"
+            r"Time:\s+([0-9.]+)\s+s\.\s+Total\s+([0-9]+)\s+plots"
+        )
+        # Regex für altes Format (Fallback)
+        self._regex_old = re.compile(
+            r"([0-9:.T-]*)\s+[\d.]+\s+harvester\s+(?:src|chia)\.harvester\.harvester(?:\s?):\s+INFO\s+"
+            r"([0-9]+)\s+plots\s+were\s+eligible\s+for\s+farming\s+([0-9a-z.]+)\s+"
+            r"Found\s+([0-9]+)\s+proofs\.\s+Time:\s+([0-9.]+)\s+s\.\s+Total\s+([0-9]+)\s+plots"
         )
 
     def parse(self, logs: str) -> List[HarvesterActivityMessage]:
-        """Parse harvester activity messages from log text.
-        
-        Args:
-            logs: Raw log text containing harvester messages
-            
-        Returns:
-            List of parsed HarvesterActivityMessage objects
+        """Parses all harvester activity messages from a bunch of logs
+
+        :param logs: String of logs - can be multi-line
+        :returns: A list of parsed messages - can be empty
         """
-        messages = []
+
+        parsed_messages = []
         
-        for match in self._pattern.finditer(logs):
-            timestamp = match.group(1)
-            eligible_plots = int(match.group(2))
-            challenge_hash = match.group(3)
-            
-            # Handle both old and new format for proofs
-            # Old format (2.5.6): group(4) contains proofs count
-            # New format (2.5.7): group(5) contains V1 proofs, group(6) contains V2 qualities
-            if match.group(4):  # Old format
-                proofs_found = int(match.group(4))
-            else:  # New format
-                v1_proofs = int(match.group(5)) if match.group(5) else 0
-                v2_qualities = int(match.group(6)) if match.group(6) else 0
-                proofs_found = v1_proofs + v2_qualities
-            
-            search_time = float(match.group(7))
-            total_plots = int(match.group(8))
-            
-            messages.append(HarvesterActivityMessage(
-                timestamp=timestamp,
-                challenge_hash=challenge_hash,
-                eligible_plots=eligible_plots,
-                proofs_found=proofs_found,
-                search_time=search_time,
-                total_plots=total_plots
-            ))
+        # Versuche zuerst das neue 2.5.7 Format zu parsen
+        matches_new = self._regex_new.findall(logs)
+        for match in matches_new:
+            parsed_messages.append(
+                HarvesterActivityMessage(
+                    timestamp=dateutil_parser.parse(match[0]),
+                    challenge_hash=match[1],
+                    eligible_plots_count=int(match[2]),
+                    found_proofs_count=int(match[3]),
+                    search_time_seconds=float(match[4]),
+                    total_plots_count=int(match[5]),
+                )
+            )
         
-        return messages        
-        for match in self._pattern.finditer(logs):
-            timestamp = match.group(1)
-            eligible_plots = int(match.group(2))
-            challenge_hash = match.group(3)
-            
-            # Handle both old and new format for proofs
-            # Old format (2.5.6): group(4) contains proofs count
-            # New format (2.5.7): group(5) contains V1 proofs, group(6) contains V2 qualities
-            if match.group(4):  # Old format
-                proofs_found = int(match.group(4))
-            else:  # New format
-                v1_proofs = int(match.group(5)) if match.group(5) else 0
-                v2_qualities = int(match.group(6)) if match.group(6) else 0
-                proofs_found = v1_proofs + v2_qualities
-            
-            search_time = float(match.group(7))
-            total_plots = int(match.group(8))
-            
-            messages.append(HarvesterActivityMessage(
-                timestamp=timestamp,
-                challenge_hash=challenge_hash,
-                eligible_plots=eligible_plots,
-                proofs_found=proofs_found,
-                search_time=search_time,
-                total_plots=total_plots
-            ))
-        
-        return messages
+        # Fallback auf altes Format falls keine neuen Matches gefunden wurden
+        if not matches_new:
+            matches_old = self._regex_old.findall(logs)
+            for match in matches_old:
+                parsed_messages.append(
+                    HarvesterActivityMessage(
+                        timestamp=dateutil_parser.parse(match[0]),
+                        eligible_plots_count=int(match[1]),
+                        challenge_hash=match[2],
+                        found_proofs_count=int(match[3]),
+                        search_time_seconds=float(match[4]),
+                        total_plots_count=int(match[5]),
+                    )
+                )
+
+        return parsed_messages
