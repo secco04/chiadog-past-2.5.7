@@ -57,18 +57,8 @@ class HarvesterActivityParser:
             r"(\d+)\s+plots\s+were\s+eligible\s+for\s+farming\s+([0-9a-z.]+)\s+"
             r"Found\s+(\d+)\s+proofs\.\s+Time:\s+([\d.]+)\s+s\.\s+Total\s+(\d+)\s+plots"
         )
-        logging.info("="*50)
-        logging.info("="*50)
-        logging.info("="*50)
-        logging.info("="*50)
-
+        
         logging.info("Parser initialized for Chia 2.5.7 and older versions")
-        logging.info("="*50)
-
-        logging.info("="*50)
-        logging.info("="*50)
-        logging.info("="*50)
-        logging.info("="*50)
 
     def parse(self, logs: str) -> List[HarvesterActivityMessage]:
         """Parses all harvester activity messages from a bunch of logs
@@ -76,22 +66,20 @@ class HarvesterActivityParser:
         :param logs: String of logs - can be multi-line
         :returns: A list of parsed messages - can be empty
         """
+        
+        # KRITISCH: Schreibe in eine separate Datei
+        with open("/tmp/chiadog_parser_debug.txt", "a") as f:
+            f.write("="*80 + "\n")
+            f.write(f"parse() called at {datetime.now()}\n")
+            f.write(f"Logs length: {len(logs)}\n")
+            f.write(f"First 500 chars:\n{logs[:500]}\n")
+            f.write("="*80 + "\n")
 
         parsed_messages = []
         
         # Versuche neues 2.5.7 Format
         matches_new = self._regex_new.findall(logs)
-        logging.info("="*50)
-        logging.info("="*50)
-        logging.info("="*50)
-        logging.info(matches_new)
         
-        logging.info("="*50)
-
-        logging.info("="*50)
-        logging.info("="*50)
-        logging.info("="*50)
-        logging.info("="*50)
         for match in matches_new:
             try:
                 msg = HarvesterActivityMessage(
