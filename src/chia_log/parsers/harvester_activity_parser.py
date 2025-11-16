@@ -57,8 +57,18 @@ class HarvesterActivityParser:
             r"(\d+)\s+plots\s+were\s+eligible\s+for\s+farming\s+([0-9a-z.]+)\s+"
             r"Found\s+(\d+)\s+proofs\.\s+Time:\s+([\d.]+)\s+s\.\s+Total\s+(\d+)\s+plots"
         )
-        
+        logging.info("="*50)
+        logging.info("="*50)
+        logging.info("="*50)
+        logging.info("="*50)
+
         logging.info("Parser initialized for Chia 2.5.7 and older versions")
+        logging.info("="*50)
+
+        logging.info("="*50)
+        logging.info("="*50)
+        logging.info("="*50)
+        logging.info("="*50)
 
     def parse(self, logs: str) -> List[HarvesterActivityMessage]:
         """Parses all harvester activity messages from a bunch of logs
@@ -71,7 +81,17 @@ class HarvesterActivityParser:
         
         # Versuche neues 2.5.7 Format
         matches_new = self._regex_new.findall(logs)
+        logging.info("="*50)
+        logging.info("="*50)
+        logging.info("="*50)
+        logging.info(matches_new)
         
+        logging.info("="*50)
+
+        logging.info("="*50)
+        logging.info("="*50)
+        logging.info("="*50)
+        logging.info("="*50)
         for match in matches_new:
             try:
                 msg = HarvesterActivityMessage(
