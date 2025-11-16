@@ -29,42 +29,35 @@ class HarvesterActivityParser:
     """
 
     def __init__(self):
-        logging.info("="*50)
-        logging.info("Harvester Activity Parser - Version 2.5.7")
-        logging.info("="*50)
-        
-        # Regex für Chia 2.5.7 Format
-        # 2025-11-16T17:40:06.742 2.5.7 harvester chia.harvester.harvester: INFO     challenge_hash: 37fe940f6b ...0 plots were eligible for farming challengeFound 0 V1 proofs and 0 V2 qualities. Time: 0.00523 s. Total 36 plots
-        self._regex_new = re.compile(
-            r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3})\s+"  # Timestamp
-            r"[\d.]+\s+"  # Version
-            r"harvester\s+"  # harvester
-            r"chia\.harvester\.harvester:\s+"  # module
-            r"INFO\s+"  # log level
-            r"challenge_hash:\s+([0-9a-f]+)\s+"  # challenge hash
-            r"\.\.\.(\d+)\s+"  # eligible plots
-            r"plots\s+were\s+eligible\s+for\s+farming\s+"
-            r"challengeFound\s+(\d+)\s+V1\s+proofs"  # proofs found
-            r".*?"  # ignore V2 qualities
-            r"Time:\s+([\d.]+)\s+s\.\s+"  # time
-            r"Total\s+(\d+)\s+plots"  # total plots
+        logging.debug("Enabled parser for harvester activity - eligible plot events.")
+        self._regex = re.compile(
+            r"([0-9:.]*) harvester (?:src|chia).harvester.harvester(?:\s?): INFO\s*challenge_hash: ([0-9a-z.]*) \.{3}([0-9]+) plots were "
+            r"eligible for farming challengeFound ([0-9]+) V1 proofs and ([0-9]+) V2 qualities\. Time: ([0-9.]*) s\. "
+            r"Total ([0-9]*) plots"
         )
-        
-        # Regex für alte Chia Versionen (Fallback)
-        self._regex_old = re.compile(
-            r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3})\s+"
-            r"[\d.]+\s+harvester\s+(?:src|chia)\.harvester\.harvester(?:\s?):\s+INFO\s+"
-            r"(\d+)\s+plots\s+were\s+eligible\s+for\s+farming\s+([0-9a-z.]+)\s+"
-            r"Found\s+(\d+)\s+proofs\.\s+Time:\s+([\d.]+)\s+s\.\s+Total\s+(\d+)\s+plots"
-        )
-        
-        logging.info("Parser initialized for Chia 2.5.7 and older versions")
 
     def parse(self, logs: str) -> List[HarvesterActivityMessage]:
         """Parses all harvester activity messages from a bunch of logs
 
         :param logs: String of logs - can be multi-line
         :returns: A list of parsed messages - can be empty
+        """
+
+        parsed_messages = []
+        matches = self._regex.findall(logs)
+        for match in matches:
+            parsed_messages.append(
+                HarvesterActivityMessage(
+                    timestamp=dateutil_parser.parse(match[0]),
+                    eligible_plots_count=int(match[1]),
+                    challenge_hash=match[2],
+                    found_proofs_count=int(match[3]) + int(match[4]),
+                    search_time_seconds=float(match[5]),
+                    total_plots_count=int(match[6]),
+                )
+            )
+
+        return parsed_messages        :returns: A list of parsed messages - can be empty
         """
         
         # KRITISCH: Schreibe in eine separate Datei
