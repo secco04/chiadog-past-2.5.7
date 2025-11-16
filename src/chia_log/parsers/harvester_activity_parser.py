@@ -31,9 +31,12 @@ class HarvesterActivityParser:
     def __init__(self):
         logging.debug("Enabled parser for harvester activity - eligible plot events.")
         self._regex = re.compile(
-            r"([0-9:.]*) harvester (?:src|chia).harvester.harvester(?:\s?): INFO\s*([0-9]+) plots were "
-            r"eligible for farming ([0-9a-z.]*) Found ([0-9]) proofs. Time: ([0-9.]*) s. "
-            r"Total ([0-9]*) plots"
+    r"([0-9:.]*) harvester (?:src|chia).harvester.harvester(?:\s?): INFO\s*"
+    r"([0-9]+) plots were eligible for farming challenge_hash: ([0-9a-f]+).*?"
+    r"Found ([0-9]+) V1 proofs and ([0-9]+) V2 qualities\. Time: ([0-9.]+) s\. "
+    r"Total ([0-9]+) plots"
+        )
+
         )
 
     def parse(self, logs: str) -> List[HarvesterActivityMessage]:
