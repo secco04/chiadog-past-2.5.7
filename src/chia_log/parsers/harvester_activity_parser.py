@@ -34,10 +34,9 @@ class HarvesterActivityParser:
         # Flexibel für verschiedene Formatierungen
         self._regex_new = re.compile(
             r"([0-9:.T-]+)\s+[\d.]+\s+harvester\s+chia\.harvester\.harvester:\s+INFO\s+"
-            r"challenge_hash:\s+([0-9a-f]+)\s+\.+([0-9]+)\s+plots\s+were\s+eligible\s+for\s+farming\s*"
-            r"(?:challenge)?Found\s+([0-9]+)\s+V1\s+proofs"
-            r".*?Time:\s+([0-9.]+)\s+s\.\s+Total\s+([0-9]+)\s+plots",
-            re.IGNORECASE
+            r"challenge_hash:\s+([0-9a-f]+)\s+\.\.\.([0-9]+)\s+plots\s+were\s+eligible\s+for\s+farming\s+"
+            r"challengeFound\s+([0-9]+)\s+V1\s+proofs"
+            r".*?Time:\s+([0-9.]+)\s+s\.\s+Total\s+([0-9]+)\s+plots"
         )
         # Regex für altes Format (Fallback)
         self._regex_old = re.compile(
