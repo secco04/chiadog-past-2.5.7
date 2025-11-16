@@ -29,6 +29,9 @@ class HarvesterActivityParser:
     """
 
     def __init__(self):
+        print("=" * 80)
+        print("HARVESTER ACTIVITY PARSER INITIALIZED")
+        print("=" * 80)
         logging.debug("Enabled parser for harvester activity - eligible plot events.")
         # Regex für neues 2.5.7 Format
         # Flexibel für verschiedene Formatierungen
@@ -51,6 +54,12 @@ class HarvesterActivityParser:
         :param logs: String of logs - can be multi-line
         :returns: A list of parsed messages - can be empty
         """
+        
+        print("=" * 80)
+        print("PARSE METHOD CALLED")
+        print(f"Logs length: {len(logs)}")
+        print(f"First 200 chars: {logs[:200]}")
+        print("=" * 80)
 
         parsed_messages = []
         
