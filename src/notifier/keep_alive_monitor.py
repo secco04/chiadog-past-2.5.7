@@ -1,117 +1,152 @@
 # std
-import re
 import logging
-from dataclasses import dataclass
+import urllib.request
 from datetime import datetime
-from typing import List
+from threading import Thread
+from time import sleep
+from typing import List, Dict
 
 # lib
-from dateutil import parser as dateutil_parser
+from confuse import ConfigView
+
+# project
+from . import EventService, Event, EventType, EventPriority
 
 
-@dataclass
-class HarvesterActivityMessage:
-    """Parsed information from harvester logs"""
+class KeepAliveMonitor:
+    """Runs a separate thread to monitor time passed
+    since last keep-alive event was received (for all services)
 
-    timestamp: datetime
-    eligible_plots_count: int
-    challenge_hash: str
-    found_proofs_count: int
-    search_time_seconds: float
-    total_plots_count: int
+    If a service stopped responding and is no longer
+    sending events, this class will trigger a high priority
+    user event and propagate it to the notifier.
 
-
-class HarvesterActivityParser:
-    """This class can parse info log messages from the chia harvester
-
-    You need to have enabled "log_level: INFO" in your chia config.yaml
-    The chia config.yaml is usually under ~/.chia/mainnet/config/config.yaml
+    There's also an option to enable pinging to a remote service
+    that provides a second layer of redundancy. E.g. if this monitoring
+    thread crashes and stops responding, the remote service will stop
+    receiving keep-alive ping events and can notify the user.
     """
 
-    def __init__(self):
-        logging.info("="*50)
-        logging.info("Harvester Activity Parser - Version 2.5.7")
-        logging.info("="*50)
-        
-        # Regex für Chia 2.5.7 Format
-        # 2025-11-16T17:40:06.742 2.5.7 harvester chia.harvester.harvester: INFO     challenge_hash: 37fe940f6b ...0 plots were eligible for farming challengeFound 0 V1 proofs and 0 V2 qualities. Time: 0.00523 s. Total 36 plots
-        self._regex_new = re.compile(
-            r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3})\s+"  # Timestamp
-            r"[\d.]+\s+"  # Version
-            r"harvester\s+"  # harvester
-            r"chia\.harvester\.harvester:\s+"  # module
-            r"INFO\s+"  # log level
-            r"challenge_hash:\s+([0-9a-f]+)\s+"  # challenge hash
-            r"\.\.\.(\d+)\s+"  # eligible plots
-            r"plots\s+were\s+eligible\s+for\s+farming\s+"
-            r"challengeFound\s+(\d+)\s+V1\s+proofs"  # proofs found
-            r".*?"  # ignore V2 qualities
-            r"Time:\s+([\d.]+)\s+s\.\s+"  # time
-            r"Total\s+(\d+)\s+plots"  # total plots
-        )
-        
-        # Regex für alte Chia Versionen (Fallback)
-        self._regex_old = re.compile(
-            r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3})\s+"
-            r"[\d.]+\s+harvester\s+(?:src|chia)\.harvester\.harvester(?:\s?):\s+INFO\s+"
-            r"(\d+)\s+plots\s+were\s+eligible\s+for\s+farming\s+([0-9a-z.]+)\s+"
-            r"Found\s+(\d+)\s+proofs\.\s+Time:\s+([\d.]+)\s+s\.\s+Total\s+(\d+)\s+plots"
-        )
-        
-        logging.info("Parser initialized for Chia 2.5.7 and older versions")
+    def __init__(self, config: ConfigView):
+        self._notify_manager = None
+        # Outside init we only need the keepalive specific config
+        self.config = config["keep_alive_monitor"]
 
-    def parse(self, logs: str) -> List[HarvesterActivityMessage]:
-        """Parses all harvester activity messages from a bunch of logs
+        self._last_keep_alive: Dict[EventService, datetime] = {}
+        self._last_keep_alive_threshold_seconds: Dict[EventService, int] = {}
+        # Check period will be inferred from minimum threshold of all services.
+        self._check_period = float("inf")
 
-        :param logs: String of logs - can be multi-line
-        :returns: A list of parsed messages - can be empty
+        # Enable all monitored_services for keepalive monitoring
+        self._set_services([EventService(service_name) for service_name in config["monitored_services"].get(list)])
+
+        # Start thread
+        self._is_running = True
+        self._keep_alive_check_thread = Thread(target=self.check_last_keep_alive)
+        self._keep_alive_check_thread.start()
+
+        self._ping_url = None
+        if self.config["enable_remote_ping"].get(bool):
+            self._ping_url = self.config["ping_url"].get()
+            logging.info(f"Enabled remote pinging to {self._ping_url}")
+
+    def set_notify_manager(self, notify_manager):
+        self._notify_manager = notify_manager
+
+    def check_last_keep_alive(self):
+        """This function runs in separate thread in the background
+        and continuously checks that keep-alive events have been received
         """
-        
-        # KRITISCH: Schreibe in eine separate Datei
-        with open("/tmp/chiadog_parser_debug.txt", "a") as f:
-            f.write("="*80 + "\n")
-            f.write(f"parse() called at {datetime.now()}\n")
-            f.write(f"Logs length: {len(logs)}\n")
-            f.write(f"First 500 chars:\n{logs[:500]}\n")
-            f.write("="*80 + "\n")
+        last_check = datetime.now()
 
-        parsed_messages = []
-        
-        # Versuche neues 2.5.7 Format
-        matches_new = self._regex_new.findall(logs)
-        
-        for match in matches_new:
-            try:
-                msg = HarvesterActivityMessage(
-                    timestamp=dateutil_parser.parse(match[0]),
-                    challenge_hash=match[1],
-                    eligible_plots_count=int(match[2]),
-                    found_proofs_count=int(match[3]),
-                    search_time_seconds=float(match[4]),
-                    total_plots_count=int(match[5]),
+        while self._is_running:
+            sleep(1)  # Not sleeping entire check period so we can interrupt
+            if (datetime.now() - last_check).seconds < self._check_period:
+                continue
+            last_check = datetime.now()
+            self._ping_remote()
+
+            events = []
+            for service in self._last_keep_alive.keys():
+                seconds_since_last = (datetime.now() - self._last_keep_alive[service]).seconds
+                threshold = self._last_keep_alive_threshold_seconds[service]
+                logging.debug(
+                    f"Keep-alive check for {service}: "
+                    + f"Last activity {seconds_since_last}s ago (notify threshold {threshold}s)"
                 )
-                parsed_messages.append(msg)
-                logging.debug(f"Parsed 2.5.7: {match[2]} eligible, {match[5]} total, {match[4]}s")
-            except Exception as e:
-                logging.error(f"Error parsing new format: {e}, match: {match}")
-        
-        # Fallback auf altes Format
-        if not matches_new:
-            matches_old = self._regex_old.findall(logs)
-            
-            for match in matches_old:
-                try:
-                    msg = HarvesterActivityMessage(
-                        timestamp=dateutil_parser.parse(match[0]),
-                        eligible_plots_count=int(match[1]),
-                        challenge_hash=match[2],
-                        found_proofs_count=int(match[3]),
-                        search_time_seconds=float(match[4]),
-                        total_plots_count=int(match[5]),
+                if seconds_since_last >= threshold:
+                    message = (
+                        f"Your {service.name} is unhealthy! "
+                        + f"No healthy events received for {seconds_since_last} seconds."
+                        + "\n(This check can be adjusted.)"
                     )
-                    parsed_messages.append(msg)
-                    logging.debug(f"Parsed old format: {match[1]} eligible, {match[5]} total")
-                except Exception as e:
-                    logging.error(f"Error parsing old format: {e}, match: {match}")
+                    logging.warning(message)
+                    events.append(
+                        Event(
+                            type=EventType.USER,
+                            priority=EventPriority.HIGH,
+                            service=service,
+                            message=message,
+                        )
+                    )
+            if len(events):
+                if self._notify_manager:
+                    self._notify_manager.process_events(events)
+                else:  # pragma: no cover
+                    logging.warning("Notify manager is not set - can't propagate high priority event!")
 
-        return parsed_messages
+    def process_events(self, events: List[Event]):
+        """Update last keep alive timestamp with any new keep-alive events"""
+
+        for event in events:
+            if event.type == EventType.KEEPALIVE:
+                logging.debug(f"Received keep-alive event from {event.service.name}")
+                self._last_keep_alive[event.service] = datetime.now()
+
+    def _ping_remote(self):
+        """Ping a remote watchdog that monitors that chiadog is alive
+        and hasn't crashed silently. Second level of redundancy ;-)
+        """
+
+        if self._ping_url:
+            logging.debug("Pinging remote keep-alive endpoint")
+            try:
+                urllib.request.urlopen(self._ping_url, timeout=10)
+            except Exception as e:  # pragma: no cover
+                logging.error(f"Failed to ping keep-alive: {e}")
+
+    def _set_services(self, services: List[EventService]) -> None:
+        """Set the services monitored for keepalive and the service check period."""
+        for service in services:
+            # TODO: This check will become obsolete once all services emit keepalive events
+            if service in [EventService.HARVESTER, EventService.WALLET]:
+                threshold = self.config["notify_threshold_seconds"][service.name].get(int)
+                self._last_keep_alive[service] = datetime.now()
+                self._last_keep_alive_threshold_seconds[service] = threshold
+                logging.info(f"Keepalive monitor started for {service.name} with a threshold of {threshold}s")
+            else:  # pragma: no cover
+                logging.debug(f"Keepalive not yet implemented for {service.name}, not enabling it.")
+
+        if len(self._last_keep_alive) < 1 and self.config["enable_remote_ping"].get(bool):  # pragma: no cover
+            logging.warning(
+                "monitored_services did not have any service enabled that supports keep-alive. "
+                + "Your external keep-alive service will never be pinged."
+            )
+
+        # Calculate check period from lowest service value
+        for threshold in self._last_keep_alive_threshold_seconds.values():
+            self._check_period = min(threshold, self._check_period)
+
+        logging.info(f"Keep-alive check period: {self._check_period} seconds")
+        # Note that this period defines how often high priority notifications
+        # will be re-triggered so < 5 min is not recommended
+        if self._check_period < 300:
+            logging.warning(
+                "Check period below 5 minutes might result "
+                "in very frequent high priority notifications "
+                "in case something stops working. Is it intended?"
+            )
+
+    def stop(self):
+        logging.info("Stopping")
+        self._is_running = False
